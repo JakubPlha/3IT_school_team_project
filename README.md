@@ -1,4 +1,4 @@
-# Project: NÁZEV_PROJEKTU
+# Project: Dungeon fighter
 
 Tento projekt je zaměřen na pracování v týmu a dělání designu a programování ve stylu Retro her
 
