@@ -1,11 +1,32 @@
-# 3IT_school_team_project
+## Project: NÁZEV_PROJEKTU
 
-## Prank na kubu
+Tento projekt je zaměřen na pracování v týmu a dělání designu a programování ve stylu Retro her
 
-## humy nech toho
+Základní informace
+Téma: Dungeon 
 
-## hele fizi jo!
+Styl: Undertale-inspired (retro UI, terminál ve spodní části)
 
-## wofvn
+Cíl: Pochopit principy abstrakce a objektově orientovaného programování.
 
-## banka
+technologie
+
+Konzole (CLI): Zpracování vstupu a historie.
+
+UI: Čisté HTML5, CSS3 a JavaScript bez herních enginů.
+
+Podporované příkazy
+HELP – Pomoc s terminalovyma prikazama
+
+
+STATUS – vidění statu postavy
+
+Závěr
+
+Návrh a architektura.
+
+Implementace příkazů.
+
+UI efekty, dokumentace a testování.
+
+Finální prezentace.
