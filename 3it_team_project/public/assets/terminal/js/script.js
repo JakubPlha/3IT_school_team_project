@@ -15,6 +15,8 @@ document.addEventListener("DOMContentLoaded", () => {
 	};
 
 	const app = new window.DungeonFighter.GameApp(uiElements);
+	const commandHistory = [];
+	let historyIndex = 0;
 
 	const printLine = (text, type = "system") => {
 		const line = document.createElement("div");
@@ -23,6 +25,29 @@ document.addEventListener("DOMContentLoaded", () => {
 		historyElement.appendChild(line);
 		historyElement.scrollTop = historyElement.scrollHeight;
 	};
+
+	const clearTerminal = () => {
+		historyElement.innerHTML = "";
+	};
+
+	const handleOutput = (output) => {
+		if (!output) {
+			return;
+		}
+
+		if (typeof output === "object" && output.action === "CLEAR") {
+			clearTerminal();
+			return;
+		}
+
+		String(output)
+			.split("\n")
+			.forEach((line) => printLine(line));
+	};
+
+	app.setMessageEmitter((message) => {
+		handleOutput(message);
+	});
 
 	printLine("Dungeon Fighter terminal ready. Type HELP.");
 
@@ -34,15 +59,34 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 
 		printLine(`> ${input}`);
+		commandHistory.push(input);
+		historyIndex = commandHistory.length;
 		inputElement.value = "";
 
 		try {
 			const output = await app.execute(input);
-			if (output) {
-				output.split("\n").forEach((line) => printLine(line));
-			}
+			handleOutput(output);
 		} catch (error) {
 			printLine(`ERROR: ${error.message}`, "error");
+		}
+	});
+
+	inputElement.addEventListener("keydown", (event) => {
+		if (!commandHistory.length) {
+			return;
+		}
+
+		if (event.key === "ArrowUp") {
+			event.preventDefault();
+			historyIndex = Math.max(0, historyIndex - 1);
+			inputElement.value = commandHistory[historyIndex] || "";
+			return;
+		}
+
+		if (event.key === "ArrowDown") {
+			event.preventDefault();
+			historyIndex = Math.min(commandHistory.length, historyIndex + 1);
+			inputElement.value = commandHistory[historyIndex] || "";
 		}
 	});
 
