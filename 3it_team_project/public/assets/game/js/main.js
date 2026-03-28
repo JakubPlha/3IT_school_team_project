@@ -7,6 +7,7 @@
 			this.level = 1;
 			this.stage = 1;
 			this.isBlocking = false;
+			this.selectedClass = null;
 		}
 
 		takeDamage(amount) {
@@ -25,6 +26,19 @@
 
 		setStage(newStage) {
 			this.stage = Math.max(1, Number(newStage) || 1);
+		}
+
+		setClass(classNumber) {
+			this.selectedClass = Number(classNumber) || null;
+		}
+
+		resetProgress() {
+			this.maxHp = 100;
+			this.hp = 100;
+			this.level = 1;
+			this.stage = 1;
+			this.isBlocking = false;
+			this.selectedClass = null;
 		}
 	}
 
@@ -114,7 +128,23 @@
 			this.enemy = new Enemy(this.player.stage);
 			this.currentUser = null;
 			this.turn = "PLAYER";
+			this.enemyBlockChance = 0.1;
+			this.basePlayerBlockChance = 0.2;
+			this.blockWindowMs = 5000;
+			this.pendingEnemyAttack = null;
+			this.messageEmitter = null;
 			this.ui.updateAll(this.player, this.enemy, this.turn);
+		}
+
+		setMessageEmitter(emitter) {
+			this.messageEmitter = typeof emitter === "function" ? emitter : null;
+		}
+
+		emitMessage(message) {
+			if (!this.messageEmitter || !message) {
+				return;
+			}
+			this.messageEmitter(message);
 		}
 
 		helpText() {
@@ -122,8 +152,11 @@
 				"Available commands:",
 				"HELP",
 				"STATUS",
+				"CLEAR",
 				"REGISTER <username> <password>",
 				"LOGIN <username> <password>",
+				"SIGN OUT",
+				"CLASS <number>",
 				"HIT ENEMY",
 				"BLOCK"
 			].join("\n");
@@ -131,9 +164,11 @@
 
 		statusText() {
 			const auth = this.currentUser ? `Logged as ${this.currentUser}` : "Not logged in";
+			const selectedClass = this.player.selectedClass ? this.player.selectedClass : "none";
 			return [
 				`Player: ${this.player.name}`,
 				auth,
+				`Class: ${selectedClass}`,
 				`HP: ${this.player.hp}/${this.player.maxHp}`,
 				`Level: ${this.player.level}`,
 				`Dungeon stage: ${this.player.stage}`,
@@ -142,6 +177,7 @@
 		}
 
 		async register(username, password) {
+			this.cancelPendingEnemyAttack();
 			const data = await this.api.register(username, password);
 			this.currentUser = data.user.username;
 			this.player.increaseLevel(data.user.level);
@@ -154,6 +190,7 @@
 		}
 
 		async login(username, password) {
+			this.cancelPendingEnemyAttack();
 			const data = await this.api.login(username, password);
 			this.currentUser = data.user.username;
 			this.player.increaseLevel(data.user.level);
@@ -172,67 +209,134 @@
 
 		async processCombat(action) {
 			if (action === "HIT") {
+				if (this.pendingEnemyAttack) {
+					return "Enemy attack is incoming. Type BLOCK.";
+				}
 				return this.performHit();
 			}
 			if (action === "BLOCK") {
-				return this.performBlock();
+				return this.resolveEnemyAttack(true);
 			}
 			return "Invalid combat command.";
 		}
 
 		async performHit() {
 			this.syncUi("PLAYER");
-			const playerDamage = this.randomInt(9 + this.player.level, 15 + this.player.level);
-			this.enemy.takeDamage(playerDamage);
 			this.ui.animate("hit", "enemy");
-			this.ui.setStatus(`You hit for ${playerDamage}.`);
-			this.syncUi("ENEMY");
+			const lines = ["You attack the enemy!"];
+
+			const enemyBlocked = Math.random() < this.enemyBlockChance;
+			if (enemyBlocked) {
+				this.ui.animate("block", "enemy");
+				this.ui.setStatus("Enemy blocked your attack.");
+				lines.push("Enemy blocked the attack!");
+			} else {
+				const playerDamage = this.randomInt(9 + this.player.level, 15 + this.player.level);
+				this.enemy.takeDamage(playerDamage);
+				this.ui.setStatus(`Enemy takes ${playerDamage} damage.`);
+				lines.push(`Enemy takes ${playerDamage} damage.`);
+			}
+
+			this.syncUi("PLAYER");
 
 			if (this.enemy.hp <= 0) {
-				return this.handleEnemyDefeat();
+				const defeatMessage = await this.handleEnemyDefeat();
+				lines.push(defeatMessage);
+				return lines.join("\n");
 			}
 
-			const enemyResult = this.enemyTurn();
-			this.syncUi("PLAYER");
-			return `You deal ${playerDamage}. ${enemyResult}`;
+			lines.push(this.startEnemyAttackWindow());
+			return lines.join("\n");
 		}
 
-		async performBlock() {
-			this.syncUi("PLAYER");
-			this.player.isBlocking = true;
-			this.ui.animate("block", "player");
-			this.ui.setStatus("You brace for the next hit.");
+		startEnemyAttackWindow() {
 			this.syncUi("ENEMY");
+			this.ui.setStatus("Enemy prepares to attack...");
 
-			const enemyResult = this.enemyTurn();
-			this.syncUi("PLAYER");
-			return `Block ready. ${enemyResult}`;
+			this.cancelPendingEnemyAttack();
+			this.pendingEnemyAttack = {
+				timerId: setTimeout(() => {
+					const timeoutMessage = this.resolveEnemyAttack(false);
+					this.emitMessage(timeoutMessage);
+				}, this.blockWindowMs)
+			};
+
+			return 'Enemy prepares to attack...\n(5 seconds to type "block")';
 		}
 
-		enemyTurn() {
-			const baseDamage = this.randomInt(6 + this.player.stage, 12 + this.player.stage);
-			const finalDamage = this.player.isBlocking ? Math.floor(baseDamage * 0.35) : baseDamage;
-			this.player.isBlocking = false;
-			this.player.takeDamage(finalDamage);
-
-			if (finalDamage > 0) {
-				this.ui.animate("hit", "player");
-			} else {
-				this.ui.animate("block", "player");
+		resolveEnemyAttack(playerAttemptedBlock) {
+			if (!this.pendingEnemyAttack) {
+				return "No incoming attack to block.";
 			}
+
+			clearTimeout(this.pendingEnemyAttack.timerId);
+			this.pendingEnemyAttack = null;
+
+			if (playerAttemptedBlock) {
+				this.ui.animate("block", "player");
+				const blockSuccess = Math.random() < this.getPlayerBlockChance();
+				if (blockSuccess) {
+					this.syncUi("PLAYER");
+					this.ui.setStatus("You blocked the attack!");
+					return "You blocked the attack!";
+				}
+
+				const failedResult = this.applyEnemyDamage();
+				return ["Block failed!", failedResult].join("\n");
+			}
+
+			return this.applyEnemyDamage();
+		}
+
+		applyEnemyDamage() {
+			const enemyDamage = this.randomInt(6 + this.player.stage, 12 + this.player.stage);
+			this.player.takeDamage(enemyDamage);
+			this.ui.animate("hit", "player");
 
 			if (this.player.hp <= 0) {
 				this.player.healFull();
 				this.ui.setStatus("You were defeated. HP restored.");
 				this.syncUi("PLAYER");
-				return `Enemy deals ${finalDamage}. You were defeated and restored to full HP.`;
+				return `Enemy attacks!\nEnemy deals ${enemyDamage} damage. You were defeated and restored to full HP.`;
 			}
 
-			this.ui.setStatus(`Enemy dealt ${finalDamage}.`);
-			return `Enemy deals ${finalDamage}.`;
+			this.ui.setStatus(`Enemy deals ${enemyDamage} damage.`);
+			this.syncUi("PLAYER");
+			return `Enemy attacks!\nEnemy deals ${enemyDamage} damage.`;
+		}
+
+		getPlayerBlockChance() {
+			return this.basePlayerBlockChance;
+		}
+
+		cancelPendingEnemyAttack() {
+			if (!this.pendingEnemyAttack) {
+				return;
+			}
+			clearTimeout(this.pendingEnemyAttack.timerId);
+			this.pendingEnemyAttack = null;
+		}
+
+		signOut() {
+			this.cancelPendingEnemyAttack();
+			this.currentUser = null;
+			this.player.resetProgress();
+			this.enemy = new Enemy(this.player.stage);
+			this.syncUi("PLAYER");
+			this.ui.setStatus("Signed out. Please login to continue.");
+			return "Signed out. Session ended.";
+		}
+
+		setPlayerClass(classNumber) {
+			if (![1, 2, 3].includes(classNumber)) {
+				return "Usage: CLASS <1|2|3>";
+			}
+			this.player.setClass(classNumber);
+			return `Class ${classNumber} selected.`;
 		}
 
 		async handleEnemyDefeat() {
+			this.cancelPendingEnemyAttack();
 			this.player.setStage(this.player.stage + 1);
 			const shouldLevelUp = this.player.stage > this.player.level;
 			if (shouldLevelUp) {
@@ -270,6 +374,11 @@
 
 			if (normalized[0] === "HELP") return { type: "HELP" };
 			if (normalized[0] === "STATUS") return { type: "STATUS" };
+			if (normalized[0] === "CLEAR") return { type: "CLEAR" };
+			if (normalized[0] === "SIGN" && normalized[1] === "OUT") return { type: "SIGN_OUT" };
+			if (normalized[0] === "CLASS") {
+				return { type: "CLASS", classNumber: Number(tokens[1]) };
+			}
 
 			if (normalized[0] === "REGISTER") {
 				return { type: "REGISTER", username: tokens[1], password: tokens[2] };
@@ -300,6 +409,10 @@
 			this.parser = new CommandParser();
 		}
 
+		setMessageEmitter(emitter) {
+			this.combat.setMessageEmitter(emitter);
+		}
+
 		async execute(rawInput) {
 			const command = this.parser.parse(rawInput);
 
@@ -315,6 +428,10 @@
 				return this.combat.statusText();
 			}
 
+			if (command.type === "CLEAR") {
+				return { action: "CLEAR" };
+			}
+
 			if (command.type === "REGISTER") {
 				if (!command.username || !command.password) {
 					return "Usage: REGISTER <username> <password>";
@@ -327,6 +444,17 @@
 					return "Usage: LOGIN <username> <password>";
 				}
 				return this.combat.login(command.username, command.password);
+			}
+
+			if (command.type === "SIGN_OUT") {
+				return this.combat.signOut();
+			}
+
+			if (command.type === "CLASS") {
+				if (!Number.isInteger(command.classNumber)) {
+					return "Usage: CLASS <1|2|3>";
+				}
+				return this.combat.setPlayerClass(command.classNumber);
 			}
 
 			if (command.type === "COMBAT") {
