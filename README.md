@@ -29,3 +29,4 @@ Implementace příkazů.
 UI efekty, dokumentace a testování.
 
 Finální prezentace.
+f
