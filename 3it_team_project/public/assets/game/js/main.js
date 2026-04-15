@@ -1,4 +1,26 @@
 (function () {
+	/**
+	 * Get SVG enemy icon path based on stage level
+	 * Maps stages to available SVG enemy files from game/img/
+	 */
+	function getEnemySvgPath(stage) {
+		const svgFiles = [
+			"assets/game/img/skeleton%202.svg",
+			"assets/game/img/skeleton%203.svg",
+			"assets/game/img/skeleton%204.svg",
+			"assets/game/img/scorpion.svg",
+			"assets/game/img/goblin.svg",
+			"assets/game/img/archer.svg",
+			"assets/game/img/demon.svg",
+			"assets/game/img/barbarian.svg",
+			"assets/game/img/wi.svg",
+			"assets/game/img/kozak.svg"
+		];
+		
+		const index = (stage - 1) % svgFiles.length;
+		return svgFiles[index];
+	}
+
 	class Player {
 		constructor(name = "Traveler") {
 			this.name = name;
@@ -53,6 +75,10 @@
 		takeDamage(amount) {
 			this.hp = Math.max(0, this.hp - amount);
 		}
+
+		getSvgIcon() {
+			return getEnemySvgPath(this.stage);
+		}
 	}
 
 	class UIRenderer {
@@ -66,6 +92,7 @@
 			this.elements.playerLevel.textContent = `LVL ${player.level}`;
 			this.elements.enemyLabel.textContent = enemy.name;
 			this.elements.turnIndicator.textContent = `TURN: ${turnText}`;
+			this.updateEnemySvg(enemy);
 		}
 
 		updateHp(side, value, maxValue) {
@@ -76,6 +103,11 @@
 				return;
 			}
 			this.elements.enemyHpBar.style.width = width;
+		}
+
+		updateEnemySvg(enemy) {
+			const svgPath = enemy.getSvgIcon();
+			this.elements.enemySpriteWrap.innerHTML = `<img src="${svgPath}" class="sprite" alt="${enemy.name}" />`;
 		}
 
 		setStatus(message) {
@@ -343,6 +375,9 @@
 				this.player.increaseLevel(this.player.level + 1);
 			}
 
+			// Post-level healing: restore player HP to 100% after defeating enemy
+			this.player.healFull();
+
 			if (this.currentUser) {
 				try {
 					await this.api.updateLevel(this.currentUser, this.player.level);
@@ -353,8 +388,8 @@
 
 			this.enemy = new Enemy(this.player.stage);
 			this.syncUi("PLAYER");
-			this.ui.setStatus(`Enemy defeated. Stage ${this.player.stage} begins.`);
-			return `Enemy defeated. You advance to stage ${this.player.stage}.`;
+			this.ui.setStatus(`Enemy defeated. Stage ${this.player.stage} begins. HP restored to 100%.`);
+			return `Enemy defeated. You advance to stage ${this.player.stage}. Your HP has been restored.`;
 		}
 
 		randomInt(min, max) {
