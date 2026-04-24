@@ -1,20 +1,30 @@
 (function () {
 	/**
+	 * Class definitions with SVG path, HP, and base damage
+	 */
+	const classDefs = {
+		"fire": { svgPath: "assets/game/img/players/kozak%20fire.svg", hp: 120, baseDamage: 15, displayName: "Fire" },
+		"knight": { svgPath: "assets/game/img/players/kozak%20knight.svg", hp: 150, baseDamage: 12, displayName: "Knight" },
+		"mag": { svgPath: "assets/game/img/players/kozak%20mag.svg", hp: 100, baseDamage: 18, displayName: "Mage" },
+		"ninja": { svgPath: "assets/game/img/players/kozak%20ninja.svg", hp: 110, baseDamage: 17, displayName: "Ninja" },
+		"default": { svgPath: "assets/game/img/players/kozak.svg", hp: 100, baseDamage: 10, displayName: "Default" }
+	};
+
+	/**
 	 * Get SVG enemy icon path based on stage level
 	 * Maps stages to available SVG enemy files from game/img/
 	 */
 	function getEnemySvgPath(stage) {
 		const svgFiles = [
-			"assets/game/img/skeleton%202.svg",
-			"assets/game/img/skeleton%203.svg",
-			"assets/game/img/skeleton%204.svg",
-			"assets/game/img/scorpion.svg",
-			"assets/game/img/goblin.svg",
-			"assets/game/img/archer.svg",
-			"assets/game/img/demon.svg",
-			"assets/game/img/barbarian.svg",
-			"assets/game/img/wi.svg",
-			"assets/game/img/kozak.svg"
+			"assets/game/img/enemies/skeleton%202.svg",
+			"assets/game/img/enemies/skeleton%203.svg",
+			"assets/game/img/enemies/skeleton%204.svg",
+			"assets/game/img/enemies/scorpion.svg",
+			"assets/game/img/enemies/goblin.svg",
+			"assets/game/img/enemies/archer.svg",
+			"assets/game/img/enemies/demon.svg",
+			"assets/game/img/enemies/barbarian.svg",
+			"assets/game/img/enemies/wi.svg"
 		];
 		
 		const index = (stage - 1) % svgFiles.length;
@@ -24,12 +34,14 @@
 	class Player {
 		constructor(name = "Traveler") {
 			this.name = name;
-			this.maxHp = 100;
-			this.hp = 100;
+			this.selectedClass = "default";
+			this.classData = classDefs[this.selectedClass];
+			this.maxHp = this.classData.hp;
+			this.hp = this.maxHp;
+			this.baseDamage = this.classData.baseDamage;
 			this.level = 1;
 			this.stage = 1;
 			this.isBlocking = false;
-			this.selectedClass = null;
 		}
 
 		takeDamage(amount) {
@@ -42,7 +54,7 @@
 
 		increaseLevel(newLevel) {
 			this.level = Math.max(this.level, Number(newLevel) || 1);
-			this.maxHp = 100 + (this.level - 1) * 8;
+			this.maxHp = this.classData.hp + (this.level - 1) * 8;
 			this.hp = Math.min(this.hp, this.maxHp);
 		}
 
@@ -50,17 +62,27 @@
 			this.stage = Math.max(1, Number(newStage) || 1);
 		}
 
-		setClass(classNumber) {
-			this.selectedClass = Number(classNumber) || null;
+		setClass(className) {
+			if (!classDefs[className]) {
+				return false;
+			}
+			this.selectedClass = className;
+			this.classData = classDefs[className];
+			this.maxHp = this.classData.hp;
+			this.hp = this.maxHp;
+			this.baseDamage = this.classData.baseDamage;
+			return true;
 		}
 
 		resetProgress() {
-			this.maxHp = 100;
-			this.hp = 100;
+			this.selectedClass = "default";
+			this.classData = classDefs[this.selectedClass];
+			this.maxHp = this.classData.hp;
+			this.hp = this.maxHp;
+			this.baseDamage = this.classData.baseDamage;
 			this.level = 1;
 			this.stage = 1;
 			this.isBlocking = false;
-			this.selectedClass = null;
 		}
 	}
 
@@ -92,7 +114,13 @@
 			this.elements.playerLevel.textContent = `LVL ${player.level}`;
 			this.elements.enemyLabel.textContent = enemy.name;
 			this.elements.turnIndicator.textContent = `TURN: ${turnText}`;
+			this.updatePlayerSvg(player);
 			this.updateEnemySvg(enemy);
+		}
+
+		updatePlayerSvg(player) {
+			const svgPath = player.classData.svgPath;
+			this.elements.playerSpriteWrap.innerHTML = `<img src="${svgPath}" class="sprite" alt="${player.name}" />`;
 		}
 
 		updateHp(side, value, maxValue) {
@@ -188,7 +216,7 @@
 				"REGISTER <username> <password>",
 				"LOGIN <username> <password>",
 				"SIGN OUT",
-				"CLASS <number>",
+				"CLASS <fire|knight|mag|ninja|default>",
 				"HIT ENEMY",
 				"BLOCK"
 			].join("\n");
@@ -196,11 +224,11 @@
 
 		statusText() {
 			const auth = this.currentUser ? `Logged as ${this.currentUser}` : "Not logged in";
-			const selectedClass = this.player.selectedClass ? this.player.selectedClass : "none";
+			const classInfo = this.player.classData ? `${this.player.classData.displayName} (HP: ${this.player.maxHp}, DMG: ${this.player.baseDamage})` : "none";
 			return [
 				`Player: ${this.player.name}`,
 				auth,
-				`Class: ${selectedClass}`,
+				`Class: ${classInfo}`,
 				`HP: ${this.player.hp}/${this.player.maxHp}`,
 				`Level: ${this.player.level}`,
 				`Dungeon stage: ${this.player.stage}`,
@@ -263,7 +291,9 @@
 				this.ui.setStatus("Enemy blocked your attack.");
 				lines.push("Enemy blocked the attack!");
 			} else {
-				const playerDamage = this.randomInt(9 + this.player.level, 15 + this.player.level);
+				const minDamage = this.player.baseDamage;
+				const maxDamage = this.player.baseDamage + 5 + this.player.level;
+				const playerDamage = this.randomInt(minDamage, maxDamage);
 				this.enemy.takeDamage(playerDamage);
 				this.ui.setStatus(`Enemy takes ${playerDamage} damage.`);
 				lines.push(`Enemy takes ${playerDamage} damage.`);
@@ -359,12 +389,14 @@
 			return "Signed out. Session ended.";
 		}
 
-		setPlayerClass(classNumber) {
-			if (![1, 2, 3].includes(classNumber)) {
-				return "Usage: CLASS <1|2|3>";
+		setPlayerClass(className) {
+			if (!className || !classDefs[className]) {
+				return "Usage: CLASS <fire|knight|mag|ninja|default>";
 			}
-			this.player.setClass(classNumber);
-			return `Class ${classNumber} selected.`;
+			this.player.setClass(className);
+			this.syncUi("PLAYER");
+			const classInfo = this.player.classData;
+			return `Class ${classInfo.displayName} selected. HP: ${classInfo.hp}, Damage: ${classInfo.baseDamage}`;
 		}
 
 		async handleEnemyDefeat() {
@@ -412,7 +444,8 @@
 			if (normalized[0] === "CLEAR") return { type: "CLEAR" };
 			if (normalized[0] === "SIGN" && normalized[1] === "OUT") return { type: "SIGN_OUT" };
 			if (normalized[0] === "CLASS") {
-				return { type: "CLASS", classNumber: Number(tokens[1]) };
+			const className = tokens[1] ? tokens[1].toLowerCase() : null;
+			return { type: "CLASS", className };
 			}
 
 			if (normalized[0] === "REGISTER") {
@@ -486,10 +519,7 @@
 			}
 
 			if (command.type === "CLASS") {
-				if (!Number.isInteger(command.classNumber)) {
-					return "Usage: CLASS <1|2|3>";
-				}
-				return this.combat.setPlayerClass(command.classNumber);
+			return this.combat.setPlayerClass(command.className);
 			}
 
 			if (command.type === "COMBAT") {
